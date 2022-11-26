@@ -34,4 +34,4 @@ vox_map_converter [OPTIONS] [FILE]
 | -b   | Stride (1=uint8 2=uint16 4=uint32 0=1bit) others values are invalid (1 by default) |
 
 ## Build
-exemple (gcc ./vox_map_converter.c -o ./vox_map_converter) optimisation could be use.
+exemple (gcc ./vox_map_converter.c -o ./vox_map_converter) optimisations flags can be use.
