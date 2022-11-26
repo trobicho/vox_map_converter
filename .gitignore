@@ -1,4 +1,4 @@
-./vox_map_converter
-./vox_map_convert
-./vox_converter
-./vox_convert
+vox_map_converter
+vox_map_convert
+vox_converter
+vox_convert
