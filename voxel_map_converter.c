@@ -18,7 +18,7 @@ typedef struct  ivec3 {
   int32_t  z;
 }ivec3;
 
-uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte) {
+uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte, int *rsize) {
   uint64_t size = vsize.x * vsize.y * vsize.z;
   uint64_t final_size;
 
@@ -35,13 +35,14 @@ uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte) {
 
   if (final_size > 1000000000) //Max final VoxMap 1Go
     return (NULL);
+  *rsize = final_size;
   return (calloc(final_size, 1));
 }
 
 void  printHelp() {
   printf("Usage: vox_converter [OPTION] [FILE]\n");
   printf("Convert voxel format from 'https://drububu.com/miscellaneous/voxelizer' txt to compact form.\n");
-  printf("  format is in binary header:[VX32bXsize32bYsize32bZsize]\n  followed by voxelMap:[Xsize*Ysize*Zsize * (stride byte or 1bit if stride=0)]\n\n");
+  printf("  format is in binary header:[VXMA Xsize[32b] Ysize[32b] Zsize[32b]]\n  followed by voxelMap:[Xsize*Ysize*Zsize * (stride byte or 1bit if stride=0)]\n\n");
 
   printf("  -h\tshow this help\n");
   printf("  -o\toutput filename\n");
@@ -92,29 +93,39 @@ void  writeInMap(ivec3 pos, uint8_t* map, VoxSize vsize, int stride) {
 }
 
 int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 *pos, int res) {
-  static char  lastCharBuf[10] = {'\0'};
-  static int   countNfind = 0;
-  static int   shrNextLine = 0;
+  static char   lastCharBuf[12] = {'\0'};
+  static int    lastCharIndex = 0;
+  static int    countNfind = 0;
+  static int    shrNextLine = 0;
 
   int   newOffset = *offset;
   int   n = 0;
   int   findN = 0;
 
+  int shr = *offset;
   for (int i = 0; i + *offset < size_read; i++) {
-    int shr = *offset + i;
-    if (shr + 1 == size_read && size_read < BUFFER_READ_SIZE)
-      return (-1);
+    shr = *offset + i;
     if (shrNextLine) {
       if (buffer[shr] == '\n') {
         countNfind = 0;
         shrNextLine = 0;
+        lastCharIndex = 0;
       }
     }
     else {
-      if (findN) {
+      if (findN || lastCharIndex > 0) {
+        if (buffer[shr] >= '0' && buffer[shr] <= '9') {
+          lastCharBuf[lastCharIndex++] = buffer[shr];
+        }
         findN++;
         if (buffer[shr] == ',') {
+          lastCharBuf[lastCharIndex] = '\0';
           findN = 0;
+          sscanf(lastCharBuf, "%d", &n);
+          if (n > 1000) {
+            printf("test %d\n", n);
+          }
+          lastCharIndex = 0;
           if (countNfind == 0)
             pos->x = n;
           else if (countNfind == 1)
@@ -124,7 +135,7 @@ int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 
             shrNextLine = 1;
             *offset = shr;
             countNfind = 0;
-            return (0);
+            break;
           }
           countNfind++;
           newOffset = shr;
@@ -133,7 +144,7 @@ int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 
       else {
         if (buffer[shr]) {
           if (buffer[shr] >= '0' && buffer[shr] <= '9') {
-            sscanf(&(buffer[shr]), "%d,", &n);
+            lastCharBuf[lastCharIndex++] = buffer[shr];
             findN = 1;
           }
         }
@@ -141,7 +152,9 @@ int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 
     }
   }
   *offset = newOffset;
-  if (countNfind < 3) {
+  if (shr == size_read - 1)
+    return (-1);
+  if (countNfind < 3 && !shrNextLine) {
     return (1);
   }
   return (0);
@@ -163,11 +176,12 @@ int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) 
     return (-1);
 
   size_read = (int)fread(buffer, 1, BUFFER_READ_SIZE, file);
-  while (res != -1) {
+  while (res != -1 || !feof(file)) {
     res = read_pos(buffer, size_read, &offset, &pos, res);
     if (res != 0) {
       if (!feof(file)) {
         size_read = fread(buffer, 1, BUFFER_READ_SIZE, file);
+        offset = 0;
       }
       else {
         if (res < 0)
@@ -176,13 +190,15 @@ int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) 
           return (-1);
       }
     }
-    else {
+    if (res == 0) {
       if (!minmaxSet) {
         min = pos;
         max = pos;
         minmaxSet = 1;
       }
       else {
+        if (pos.x > 1000)
+          printf("teste\n");
         cmpPos(&min, &max, pos);
       }
       if (sizeBuffer <= offsetPos) {
@@ -195,7 +211,8 @@ int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) 
   vsize->x = (max.x - min.x) + 1;
   vsize->y = (max.y - min.y) + 1;
   vsize->z = (max.z - min.z) + 1;
-  *map = allocate_vox_map(*vsize, stride);
+  int msize = 0;
+  *map = allocate_vox_map(*vsize, stride, &msize);
   int i = 0;
   for (i = 0; i < offsetPos; i++) {
     ivec3 pos = bufferPos[i];
@@ -204,7 +221,8 @@ int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) 
     pos.z += min.z;
     writeInMap(pos, *map, *vsize, stride);
   }
-  return 0;
+  free(bufferPos);
+  return (msize);
 }
 
 int   knownSizeParsing(FILE* file, uint8_t* map, VoxSize vsize, int stride) {
@@ -215,21 +233,21 @@ int   knownSizeParsing(FILE* file, uint8_t* map, VoxSize vsize, int stride) {
   int   size_read;
         
   size_read = fread(buffer, 1, BUFFER_READ_SIZE, file);
-  while (res != -1) {
+  while (res != -1 || !feof(file)) {
     res = read_pos(buffer, size_read, &offset, &pos, res);
     if (res != 0) {
       if (!feof(file)) {
         size_read = fread(buffer, 1, BUFFER_READ_SIZE, file);
+        offset = 0;
       }
-      else {
-        return 0;
-      }
+      else if (res != -1)
+        return (-1);
     }
-    else {
+    if (res == 0) {
       writeInMap(pos, map, vsize, stride);
     }
   }
-  return 0;
+  return (0);
 }
 
 int   parseArgSize(char* arg, VoxSize* size) {
@@ -244,15 +262,38 @@ int   parseArgSize(char* arg, VoxSize* size) {
   return (0);
 }
 
+int write_map(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize) {
+  uint32_t header[4];
+  header[0] = 'V' << 24 | 'O' << 16 | 'M' << 8 | 'A';
+  header[1] = vsize.x;
+  header[2] = vsize.y;
+  header[3] = vsize.z;
+  if (fwrite(header, sizeof(uint32_t), 4, file) != 4) {
+    printf("error: (%s)\n", ferror(file));
+    return (-1);
+  }
+  size_t sizeWrited = fwrite(voxMap, 1, mapSize, file);
+  if (sizeWrited != mapSize) {
+    printf("size writed %d, expected: %d\n", sizeWrited, mapSize);
+    printf("error: (%s)\n", ferror(file));
+    return (-1);
+  }
+  else {
+    printf("size writed %d bytes\n", sizeWrited, mapSize);
+  }
+  return (0);
+}
+
 int main(int ac, char** av) {
-  char*   filename;
-  char    outFilename[1000] = {'\0'};
-  FILE*   file;
-  FILE*   out_file;
-  int     stride = 1;
-  VoxSize voxSize;
-  int     voxSizeIsKnow = 0;
+  char*     filename;
+  char      outFilename[1000] = {'\0'};
+  FILE*     file;
+  FILE*     out_file;
+  int       stride = 1;
+  VoxSize   voxSize;
+  int       voxSizeIsKnow = 0;
   uint8_t*  voxMap;
+  int       error = 0;
 
   if (ac > 1) {
     for (int i = 1; i < ac; i++) {
@@ -279,6 +320,7 @@ int main(int ac, char** av) {
               printHelp();
               return (1);
             }
+            voxSizeIsKnow = 1;
             break;
           case 'o':
             strcpy(outFilename, av[++i]);
@@ -302,36 +344,49 @@ int main(int ac, char** av) {
   }
 
   file = fopen(filename, "r");
-
   if (file == NULL) {
     printf("error opening file %s", filename);
     printHelp();
   }
 
+  int mapSize = 0;
   if (voxSizeIsKnow) {
-    voxMap = allocate_vox_map(voxSize, stride);
+    voxMap = allocate_vox_map(voxSize, stride, &mapSize);
     if (voxMap == NULL) {
       printf("Invalid size: X:%d, Y:%d, Z:%d\n", voxSize.x, voxSize.y, voxSize.z);
       printHelp();
-      return (1);
+      error = 1;
     }
-    if (knownSizeParsing(file, voxMap, voxSize, stride) != 0) {
+    else if (knownSizeParsing(file, voxMap, voxSize, stride) != 0) {
       printf("error while parsing file\n");
-      return (1);
+      error = 1;
     }
+    else
+      printf("success mapDimension = %d, %d, %d\n", voxSize.x, voxSize.y, voxSize.z);
   }
   else {
-    if (unknownSizeParsing(file, &voxMap, &voxSize, stride) != 0) {
+    if ((mapSize = unknownSizeParsing(file, &voxMap, &voxSize, stride)) < 0) {
       printf("error while parsing file\n");
-      return (1);
+      error = 1;
     }
-    else {
+    else
       printf("success mapDimension = %d, %d, %d\n", voxSize.x, voxSize.y, voxSize.z);
-    }
+  }
+  fclose(file);
+  if (error) {
+    free(voxMap);
+    return (error);
   }
   out_file = fopen(outFilename, "w");
-  if (file == NULL) {
+  if (out_file == NULL) {
     printf("error opening out_file for writing %s", outFilename);
+    free(voxMap);
+    return (error);
   }
-  return (0);
+  if (write_map(out_file, voxMap, voxSize, mapSize) != 0) {
+    printf("error writing to file %s", outFilename);
+  }
+  free(voxMap);
+  fclose(out_file);
+  return (error);
 }
