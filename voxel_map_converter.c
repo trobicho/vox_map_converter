@@ -53,14 +53,11 @@ void  printHelp() {
 int   getStride(char* arg) {
   int stride;
 
-  if (arg[1] == '\0' && arg[0] >= '0' && arg[0] <= '4') {
-    stride = (int)(arg[0] - '0');
-    if (stride == 3)
-      return (-1);
+  sscanf(arg, "%d", &stride);
+  if (stride >= 0 && stride <= 4) {
+    return (stride);
   }
-
-  else
-    return (-1);
+  return (-1);
 }
 
 void  cmpPos(ivec3* min, ivec3 *max, ivec3 pos) {
@@ -308,7 +305,8 @@ int main(int ac, char** av) {
             return (0);
             break;
           case 'b':
-            if ((stride = getStride(av[++i])) < 0) {
+            stride = getStride(av[++i]);
+            if (stride < 0) {
               printf("Invalid stride: %s\n", av[i]);
               printHelp();
               return (1);
@@ -345,7 +343,7 @@ int main(int ac, char** av) {
 
   file = fopen(filename, "r");
   if (file == NULL) {
-    printf("error opening file %s", filename);
+    printf("error opening file %s\n", filename);
     printHelp();
   }
 
@@ -379,7 +377,7 @@ int main(int ac, char** av) {
   }
   out_file = fopen(outFilename, "w");
   if (out_file == NULL) {
-    printf("error opening out_file for writing %s", outFilename);
+    printf("error opening out_file for writing %s\n", outFilename);
     free(voxMap);
     return (error);
   }
