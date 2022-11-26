@@ -1,7 +1,7 @@
 # vox_map_converter
 Convert voxel format from 'https://drububu.com/miscellaneous/voxelizer' txt to a more compact form.
 
-Single source file no dependencies.
+Single source file only the standard c library
 
 ## Format
 
