@@ -28,7 +28,7 @@ vox_map_converter [OPTIONS] [FILE]
 |------|------|
 | -h   | Show Help |
 | -o   | Output file (FILE.vox by default) |
-| -s   | Size x,y,z (no offset no negative) (if not supplied will be deduced with offset and negative positions) |
+| -s   | Size X,Y,Z (no offset no negative) (if not supplied will be deduced with offset and negative positions) |
 | -b   | Stride (1=uint8 2=uint16 4=uint32 0=1bit) others values are invalid (1 by default) |
 
 ## Build
