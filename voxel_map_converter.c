@@ -345,6 +345,8 @@ int main(int ac, char** av) {
   if (file == NULL) {
     printf("error opening file %s\n", filename);
     printHelp();
+    error = 1;
+    return (error);
   }
 
   int mapSize = 0;
@@ -383,6 +385,7 @@ int main(int ac, char** av) {
   }
   if (write_map(out_file, voxMap, voxSize, mapSize) != 0) {
     printf("error writing to file %s", outFilename);
+    error = 1;
   }
   free(voxMap);
   fclose(out_file);
