@@ -42,12 +42,15 @@ uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte, int *rsize) {
 void  printHelp() {
   printf("Usage: vox_converter [OPTION] [FILE]\n");
   printf("Convert voxel format from 'https://drububu.com/miscellaneous/voxelizer' txt to compact form.\n");
-  printf("  format is in binary header:[VXMA Xsize[32b] Ysize[32b] Zsize[32b]]\n  followed by voxelMap:[Xsize*Ysize*Zsize * (stride byte or 1bit if stride=0)]\n\n");
+  printf("  format is in binary header: [VXMA Xsize[32b] Ysize[32b] Zsize[32b]]\n  followed by voxelMap:[Xsize*Ysize*Zsize * (stride byte or 1bit if stride=0)]\n");
+  printf("  or if compressed is use: [VXMC Xsize[32b] Ysize[32b] Zsize[32b]]\n  followed by voxelMap RLE compressed (uint32:uint8)\n\n");
 
   printf("  -h\tshow this help\n");
   printf("  -o\toutput filename\n");
   printf("  -s\tsize x,y,z (all negative position in the file will be ignored)\n\t(if not supplied will be deduced and negative handled)\n");
   printf("  -b\tstride (1=uint8 2=uint16 4=uint32 0=1bit all other are invalid) (1 by default)\n");
+  printf("  -r\tRLE compressed (stride will be ignored (uint32:uint8) will be used (could be larger))\n");
+  printf("  -l\tsame as -r but the lenght do not carry through Y increment\n");
 }
 
 int   getStride(char* arg) {
@@ -265,18 +268,73 @@ int write_map(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize) {
   header[1] = vsize.x;
   header[2] = vsize.y;
   header[3] = vsize.z;
-  if (fwrite(header, sizeof(uint32_t), 4, file) != 4) {
+  if (fwrite(header, 1, 16, file) != 16) {
     printf("error: (%s)\n", ferror(file));
     return (-1);
   }
-  size_t sizeWrited = fwrite(voxMap, 1, mapSize, file);
-  if (sizeWrited != mapSize) {
-    printf("size writed %d, expected: %d\n", sizeWrited, mapSize);
+  size_t sizeWritten = fwrite(voxMap, 1, mapSize, file);
+  if (sizeWritten != mapSize) {
+    printf("size written %d, expected: %d\n", sizeWritten, mapSize);
     printf("error: (%s)\n", ferror(file));
     return (-1);
   }
   else {
-    printf("size writed %d bytes\n", sizeWrited, mapSize);
+    printf("size written %d bytes\n", sizeWritten);
+  }
+  return (0);
+}
+
+int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize, int rleLineBreak) {
+  uint32_t header[4];
+  header[0] = 'V' << 24 | 'O' << 16 | 'M' << 8 | 'C';
+  header[1] = vsize.x;
+  header[2] = vsize.y;
+  header[3] = vsize.z;
+
+  if (fwrite(header, 1, 16, file) != 16) {
+    printf("error: (%s)\n", ferror(file));
+    return (-1);
+  }
+
+  uint8_t bufferRLE[BUFFER_READ_SIZE];
+  int     offset = 0;
+  size_t  sizeExpected = 0;
+  size_t  sizeWritten = 0;
+  int     lastValue = voxMap[0];
+  int     RL = 0;
+  printf("mapSize = %d\n", mapSize);
+  for (int i = 1; i < mapSize; i++) {
+    RL++;
+    if (voxMap[i] != lastValue || (rleLineBreak && i % vsize.x == 0)) {
+      *((uint32_t*)(bufferRLE + offset)) = RL;
+      bufferRLE[offset + 4] = lastValue;
+      offset += 5;
+      sizeExpected += (size_t)5;
+      lastValue = voxMap[i];
+      RL = 0;
+    }
+    if (offset + 5 > BUFFER_READ_SIZE) {
+      sizeWritten += fwrite(bufferRLE, 1, offset, file);
+      offset = 0;
+    }
+  }
+  if (offset > 0) {
+    sizeWritten += fwrite(bufferRLE, 1, offset, file);
+    offset = 0;
+    if (RL > 0) {
+      *((uint32_t*)bufferRLE) = RL;
+      bufferRLE[4] = lastValue;
+      sizeExpected += (size_t)5;
+      sizeWritten += fwrite(bufferRLE, 1, 5, file);
+    }
+  }
+  if (sizeWritten != sizeExpected) {
+    printf("size written %d, expected: %d\n", sizeWritten, sizeExpected);
+    printf("error: (%s)\n", ferror(file));
+    return (-1);
+  }
+  else {
+    printf("size written %d bytes\n", sizeWritten);
   }
   return (0);
 }
@@ -291,6 +349,7 @@ int main(int ac, char** av) {
   int       voxSizeIsKnow = 0;
   uint8_t*  voxMap;
   int       error = 0;
+  int	    compressed = 0;
 
   if (ac > 1) {
     for (int i = 1; i < ac; i++) {
@@ -320,6 +379,12 @@ int main(int ac, char** av) {
             }
             voxSizeIsKnow = 1;
             break;
+          case 'r':
+            compressed = 1;
+            break;
+          case 'l':
+            compressed = 2;
+            break;
           case 'o':
             strcpy(outFilename, av[++i]);
             break;
@@ -339,6 +404,9 @@ int main(int ac, char** av) {
   else {
     printHelp();
     return (0);
+  }
+  if (compressed) {
+  	stride = 1;
   }
 
   file = fopen(filename, "r");
@@ -383,9 +451,17 @@ int main(int ac, char** av) {
     free(voxMap);
     return (error);
   }
-  if (write_map(out_file, voxMap, voxSize, mapSize) != 0) {
-    printf("error writing to file %s", outFilename);
-    error = 1;
+  if (compressed == 0) {
+    if (write_map(out_file, voxMap, voxSize, mapSize) != 0) {
+      printf("error writing to file %s", outFilename);
+      error = 1;
+    }
+  }
+  else if (compressed) {
+    if (write_map_RLE(out_file, voxMap, voxSize, mapSize, compressed == 2) != 0) {
+      printf("error writing to file %s", outFilename);
+      error = 1;
+    }
   }
   free(voxMap);
   fclose(out_file);

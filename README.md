@@ -32,6 +32,8 @@ vox_map_converter [OPTIONS] [FILE]
 | -o   | Output file (FILE.vox by default) |
 | -s   | Size X,Y,Z (no offset no negative) (if not supplied will be deduced with offset and negative positions) |
 | -b   | Stride (1=uint8 2=uint16 4=uint32 0=1bit) others values are invalid (1 by default) |
+| -r   | RLE compressed (stride will be ignored (uint32:uint8) will be used |
+| -l   | same as -r but the lenght do not carry through Y increment |
 
 ## Build
 exemple (gcc ./vox_map_converter.c -o ./vox_map_converter) optimisations flags can be use.
