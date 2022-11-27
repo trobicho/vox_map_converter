@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <limits.h>
 
 #define BUFFER_READ_SIZE    1000000 //1 Mo Buffer
 #define ALLOC_STEP_VOX_POS  100000
@@ -18,11 +19,11 @@ typedef struct  ivec3 {
   int32_t  z;
 }ivec3;
 
-uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte, int *rsize) {
+uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte, uint64_t *rsize) {
   uint64_t size = vsize.x * vsize.y * vsize.z;
   uint64_t final_size;
 
-  if (size > 1000000000 && stride_byte != 0)
+  if (size > 4000000000 && stride_byte != 0)
     return (NULL);
 
   if (stride_byte < 1) {
@@ -33,7 +34,7 @@ uint8_t* allocate_vox_map(const VoxSize vsize, int stride_byte, int *rsize) {
   else
     final_size = size * stride_byte;
 
-  if (final_size > 1000000000) //Max final VoxMap 1Go
+  if (final_size > 4000000000) //Max final VoxMap 1Go
     return (NULL);
   *rsize = final_size;
   return (calloc(final_size, 1));
@@ -160,7 +161,7 @@ int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 
   return (0);
 }
 
-int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) {
+uint64_t  unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) {
   char    buffer[BUFFER_READ_SIZE];
   ivec3*  bufferPos = malloc(ALLOC_STEP_VOX_POS * sizeof(ivec3));
   ivec3   pos;
@@ -211,7 +212,7 @@ int   unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stride) 
   vsize->x = (max.x - min.x) + 1;
   vsize->y = (max.y - min.y) + 1;
   vsize->z = (max.z - min.z) + 1;
-  int msize = 0;
+  uint64_t msize = 0;
   *map = allocate_vox_map(*vsize, stride, &msize);
   int i = 0;
   for (i = 0; i < offsetPos; i++) {
@@ -262,7 +263,7 @@ int   parseArgSize(char* arg, VoxSize* size) {
   return (0);
 }
 
-int write_map(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize) {
+int write_map(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize) {
   uint32_t header[4];
   header[0] = 'V' << 24 | 'O' << 16 | 'M' << 8 | 'A';
   header[1] = vsize.x;
@@ -284,7 +285,7 @@ int write_map(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize) {
   return (0);
 }
 
-int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize, int rleLineBreak) {
+int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize, int rleLineBreak) {
   uint32_t header[4];
   header[0] = 'V' << 24 | 'O' << 16 | 'M' << 8 | 'C';
   header[1] = vsize.x;
@@ -296,12 +297,12 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize, int r
     return (-1);
   }
 
-  uint8_t bufferRLE[BUFFER_READ_SIZE];
-  int     offset = 0;
-  size_t  sizeExpected = 0;
-  size_t  sizeWritten = 0;
-  int     lastValue = voxMap[0];
-  int     RL = 0;
+  uint8_t   bufferRLE[BUFFER_READ_SIZE];
+  int       offset = 0;
+  size_t    sizeExpected = 0;
+  size_t    sizeWritten = 0;
+  int       lastValue = voxMap[0];
+  uint32_t  RL = 0;
   printf("mapSize = %d\n", mapSize);
   for (int i = 1; i < mapSize; i++) {
     RL++;
@@ -313,7 +314,7 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, int mapSize, int r
       lastValue = voxMap[i];
       RL = 0;
     }
-    if (offset + 5 > BUFFER_READ_SIZE) {
+    if (offset + 5 > BUFFER_READ_SIZE || RL + 1 == UINT_MAX) {
       sizeWritten += fwrite(bufferRLE, 1, offset, file);
       offset = 0;
     }
@@ -417,7 +418,7 @@ int main(int ac, char** av) {
     return (error);
   }
 
-  int mapSize = 0;
+  uint64_t mapSize = 0;
   if (voxSizeIsKnow) {
     voxMap = allocate_vox_map(voxSize, stride, &mapSize);
     if (voxMap == NULL) {
