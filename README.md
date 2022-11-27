@@ -9,7 +9,7 @@ Single source file only use the standard c library.
 
 |  Item  | Size |
 |--------|------|
-| 'VXMA' | 32 bits|
+| 'VXMA' or 'VXMC' if RLE | 32 bits|
 | Xsize  | 32 bits|
 | Ysize  | 32 bits|
 | Zsize  | 32 bits|

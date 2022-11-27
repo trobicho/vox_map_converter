@@ -123,9 +123,6 @@ int   read_pos(char buffer[BUFFER_READ_SIZE], int size_read, int *offset, ivec3 
           lastCharBuf[lastCharIndex] = '\0';
           findN = 0;
           sscanf(lastCharBuf, "%d", &n);
-          if (n > 1000) {
-            printf("test %d\n", n);
-          }
           lastCharIndex = 0;
           if (countNfind == 0)
             pos->x = n;
@@ -198,8 +195,6 @@ uint64_t  unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stri
         minmaxSet = 1;
       }
       else {
-        if (pos.x > 1000)
-          printf("teste\n");
         cmpPos(&min, &max, pos);
       }
       if (sizeBuffer <= offsetPos) {
@@ -214,8 +209,7 @@ uint64_t  unknownSizeParsing(FILE* file, uint8_t** map, VoxSize *vsize, int stri
   vsize->z = (max.z - min.z) + 1;
   uint64_t msize = 0;
   *map = allocate_vox_map(*vsize, stride, &msize);
-  int i = 0;
-  for (i = 0; i < offsetPos; i++) {
+  for (int i = 0; i < offsetPos; i++) {
     ivec3 pos = bufferPos[i];
     pos.x += min.x;
     pos.y += min.y;
@@ -297,6 +291,7 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize, 
     return (-1);
   }
 
+  uint32_t  nbValue = 0;
   uint8_t   bufferRLE[BUFFER_READ_SIZE];
   int       offset = 0;
   size_t    sizeExpected = 0;
@@ -304,6 +299,7 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize, 
   int       lastValue = voxMap[0];
   uint32_t  RL = 0;
   printf("mapSize = %d\n", mapSize);
+
   for (int i = 1; i < mapSize; i++) {
     RL++;
     if (voxMap[i] != lastValue || (rleLineBreak && i % vsize.x == 0)) {
@@ -313,6 +309,7 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize, 
       sizeExpected += (size_t)5;
       lastValue = voxMap[i];
       RL = 0;
+      nbValue++;
     }
     if (offset + 5 > BUFFER_READ_SIZE || RL + 1 == UINT_MAX) {
       sizeWritten += fwrite(bufferRLE, 1, offset, file);
@@ -322,13 +319,15 @@ int write_map_RLE(FILE* file, uint8_t *voxMap, VoxSize vsize, uint64_t mapSize, 
   if (offset > 0) {
     sizeWritten += fwrite(bufferRLE, 1, offset, file);
     offset = 0;
-    if (RL > 0) {
-      *((uint32_t*)bufferRLE) = RL;
-      bufferRLE[4] = lastValue;
-      sizeExpected += (size_t)5;
-      sizeWritten += fwrite(bufferRLE, 1, 5, file);
-    }
   }
+  if (RL > 0) {
+    *((uint32_t*)bufferRLE) = RL;
+    bufferRLE[4] = lastValue;
+    sizeExpected += (size_t)5;
+    sizeWritten += fwrite(bufferRLE, 1, 5, file);
+    nbValue++;
+  }
+  printf("number of value written: %u\n", nbValue);
   if (sizeWritten != sizeExpected) {
     printf("size written %d, expected: %d\n", sizeWritten, sizeExpected);
     printf("error: (%s)\n", ferror(file));
